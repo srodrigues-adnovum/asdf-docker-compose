@@ -13,16 +13,6 @@ install_plugin() {
   local version=$2
   local install_path=$3
 
-  if [ "$(printf '%s\n' "2.0.0" "$version" | sort -rV | head -n1)" = "$version" ]; then
-    echo
-    echo NOTE:
-    echo
-    echo Version 2.x or greater are NOT SUPPORTED by this plugin.
-    echo Please see https://github.com/docker/compose#where-to-get-docker-compose for more info.
-    echo
-    exit 1
-  fi
-
   local bin_install_path="$install_path/bin"
   local download_url="$(get_download_url $install_type $version)"
 
@@ -34,8 +24,50 @@ install_plugin() {
   chmod +x $bin_path
 }
 
+# from https://stackoverflow.com/questions/4023830/how-to-compare-two-strings-in-dot-separated-version-format-in-bash
+function vercomp() {
+  if [[ "$1" == "$2" ]]; then
+    return 0
+  fi
+  local IFS=.
+  # shellcheck disable=SC2206
+  local i ver1=($1) ver2=($2)
+  # fill empty fields in ver1 with zeros
+  for ((i = ${#ver1[@]}; i < ${#ver2[@]}; i++)); do
+    ver1[i]=0
+  done
+  for ((i = 0; i < ${#ver1[@]}; i++)); do
+    if [[ -z ${ver2[i]} ]]; then
+      # fill empty fields in ver2 with zeros
+      ver2[i]=0
+    fi
+    if ((10#${ver1[i]} > 10#${ver2[i]})); then
+      return 1
+    fi
+    if ((10#${ver1[i]} < 10#${ver2[i]})); then
+      return 2
+    fi
+  done
+  return 0
+}
+
 get_platform() {
-  [ "Linux" = "$(uname)" ] && echo "Linux" || echo "Darwin"
+  #1.29.1
+  #https://github.com/docker/compose/releases/tag/v2.0.0
+  #https://github.com/docker/compose/releases/download/v2.0.0/docker-compose-darwin-arm64
+  case "$(uname -s)" in
+    Darwin)
+            echo "Darwin"
+            ;;
+    Linux)
+           echo "Linux"
+           ;;
+    MINGW64*)
+           echo "Windows"
+           ;;
+    *)
+   exit 1
+  esac
 }
 
 get_arch() {
@@ -45,10 +77,45 @@ get_arch() {
 get_download_url() {
   local install_type=$1
   local version=$2
-
-  local platform=$(get_platform)
+  local platform  
   local arch=$(get_arch)
-  echo "https://github.com/docker/compose/releases/download/${version}/docker-compose-${platform}-${arch}"
+  local ext=""
+
+  vercomp "$version" "2.0.0"
+  case $? in
+    1)  #> 
+      case "$(uname -s)" in
+        Darwin)
+            platform="darwin"
+            ;;
+        Linux)
+           platform="linux"
+           ;;
+        MINGW64*)
+           platform="windows"
+           ext=".exe"
+           ;;
+        *)
+      esac
+      echo "https://github.com/docker/compose/releases/download/v${version}/docker-compose-${platform}-${arch}${ext}"
+      ;;
+    0 | 2) #=<
+      case "$(uname -s)" in
+        Darwin)
+            platform="Darwin"
+            ;;
+        Linux)
+           platform="Linux"
+           ;;
+        MINGW64*)
+           platform="Windows"
+           ext=".exe"
+           ;;
+        *)
+      esac
+      echo "https://github.com/docker/compose/releases/download/${version}/docker-compose-${platform}-${arch}${ext}"
+      ;;
+  esac
 }
 
 install_plugin "$ASDF_INSTALL_TYPE" "$ASDF_INSTALL_VERSION" "$ASDF_INSTALL_PATH"
